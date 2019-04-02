@@ -311,7 +311,7 @@ int main( void ) {
   Msg_Presentation();
   SendMyMessage();
   uint8_t pre_pir_value = 255;
-  pir_value = (GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_4) == SET)?1:0;
+  pir_value = (GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_4) == RESET)?0:1;
   pir_ready = TRUE;
   while (1) {    
     // Feed the Watchdog
@@ -370,13 +370,13 @@ INTERRUPT_HANDLER(EXTI4_IRQHandler, 12)
      it is recommended to set a breakpoint on the following instruction.
   */
   pir_ready = TRUE;
-  if(GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_4) == SET)
+  if(GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_4) == RESET)
   {
-    pir_value = 1;
+    pir_value = 0;
   }
   else
   {
-    pir_value = 0;
+    pir_value = 1;
   }
   EXTI_ClearITPendingBit(EXTI_IT_Pin4);    
 }
