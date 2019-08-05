@@ -53,6 +53,7 @@ bool gIsConfigChanged = FALSE;
 bool gResetRF = FALSE;
 bool gResetNode = FALSE;
 //////////////////pir collect//////////////////
+uint8_t pir_check_data = 0;
 uint8_t pir_value = 0;
 bool pir_ready = FALSE;
 uint16_t pir_tick = 0;
@@ -62,7 +63,7 @@ uint16_t pir_tick = 0;
 uint8_t _uniqueID[UNIQUE_ID_LEN];
 uint8_t m_cntRFSendFailed = 0;
 
-
+uint16_t pirofftimeout = 0;
 uint8_t mutex;
 void tmrProcess();
 
@@ -226,6 +227,7 @@ void ResetRFModule()
     NRF2401_EnableIRQ();
     UpdateNodeAddress(NODEID_GATEWAY);
     gResetRF=FALSE;
+    RF24L01_set_mode_RX();
   }
 }
 
@@ -283,6 +285,9 @@ void dataio_init()
   GPIO_Init(GPIOC, GPIO_Pin_4, GPIO_Mode_In_PU_IT);
   EXTI_DeInit();
   EXTI_SetPinSensitivity(EXTI_Pin_4, EXTI_Trigger_Rising_Falling);
+  // led
+  GPIO_Init(GPIOD, GPIO_Pin_6, GPIO_Mode_Out_PP_High_Fast);
+  GPIO_WriteBit(GPIOD,GPIO_Pin_6,RESET);
 }
 
 int main( void ) {
@@ -299,6 +304,12 @@ int main( void ) {
   FLASH_DeInit();
   Read_UniqueID(_uniqueID, UNIQUE_ID_LEN);
   LoadConfig();
+  ////// not common config check/////////////
+  if(gConfig.timeout == 0 || gConfig.timeout >= 60000)
+  { // invalid timeout
+    gConfig.timeout = 5;
+  }  
+  ////// not common config check/////////////
   // NRF_IRQ
   NRF2401_EnableIRQ();
 
@@ -317,7 +328,7 @@ int main( void ) {
     // Feed the Watchdog
     feed_wwdg();   
 
-    if( pir_ready  || pir_tick > SEND_MAX_INTERVAL_PIR ) {
+    if( pre_pir_value != pir_value  || pir_tick > SEND_MAX_INTERVAL_PIR ) {
         // Reset send timer
         pir_tick = 0;
         pre_pir_value = pir_value;
@@ -336,6 +347,15 @@ int main( void ) {
 // Execute timer operations
 void tmrProcess() {
   pir_tick++;
+  if(pirofftimeout>0)
+  {
+    pirofftimeout--;
+  }
+  if(pirofftimeout == 0 && pir_check_data == 0)
+  {
+    pir_value = 0;
+    GPIO_WriteBit(GPIOD,GPIO_Pin_6,RESET);
+  } 
 }
 
 void RF24L01_IRQ_Handler() {
@@ -372,11 +392,15 @@ INTERRUPT_HANDLER(EXTI4_IRQHandler, 12)
   pir_ready = TRUE;
   if(GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_4) == RESET)
   {
-    pir_value = 0;
+    //pir_value = 0;
+    pir_check_data = 0;
+    pirofftimeout=gConfig.timeout*100;
   }
   else
   {
+    pir_check_data = 1;
     pir_value = 1;
+    GPIO_WriteBit(GPIOD,GPIO_Pin_6,SET);
   }
   EXTI_ClearITPendingBit(EXTI_IT_Pin4);    
 }

@@ -264,6 +264,7 @@
           <state>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l</state>
           <state>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\commonbusiness</state>
           <state>$PROJ_DIR$\..\xlightCommon\xlightdefine</state>
+          <state>$PROJ_DIR$\..\xlightCommon\xlightdefine\Business</state>
         </option>
         <option>
           <name>CCStdIncCheck</name>
@@ -494,7 +495,7 @@
         </option>
         <option>
           <name>OOCOutputFile</name>
-          <state>SensorV1.0.1.0_home.hex</state>
+          <state>thremalsensor.hex</state>
         </option>
         <option>
           <name>OOCCommandLineProducer</name>
@@ -1594,6 +1595,15 @@
   </configuration>
   <group>
     <name>Common</name>
+    <group>
+      <name>ComBusiness</name>
+      <file>
+        <name>$PROJ_DIR$\..\xlightCommon\xlightdefine\Business\ProtocolBus.c</name>
+      </file>
+      <file>
+        <name>$PROJ_DIR$\..\xlightCommon\xlightdefine\Business\ProtocolBus.h</name>
+      </file>
+    </group>
     <file>
       <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\common.c</name>
     </file>

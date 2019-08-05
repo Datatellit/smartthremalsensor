@@ -12,6 +12,7 @@
 #define XLA_ORGANIZATION          "xlight.ca"               // Default value. Read from EEPROM
 #define XLA_PRODUCT_NAME          "XRemote"                 // Default value. Read from EEPROM
 
+#define XLA_PRODUCT_Type          ZEN_TARGET_PIRSENSOR
 #define XLA_PRODUCT_NODEID        NODEID_MAX_SUPERSENSOR
 #define XLA_MIN_VER_REQUIREMENT   0x20
 typedef struct
@@ -37,6 +38,8 @@ typedef struct
   US token;                                 // Current token
   UC indDevice                :3;           // Current Device Index: [0..3]
   UC reserved2                :5;
+  US senMap                   :16;
+  US timeout                  :16;          // pir timeout
 } Config_t;
 
 extern Config_t gConfig;
