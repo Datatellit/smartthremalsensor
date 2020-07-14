@@ -30,7 +30,6 @@
 #include "_global.h"
 #include "stm8l15x_it.h"
 
-#include "button.h"
 #include "timer4.h"
     
 u32 int_timer4 = 0;

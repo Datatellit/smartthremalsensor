@@ -4,8 +4,6 @@
 #include "timer4.h"
 #include "MyMessage.h"
 #include "ProtocolParser.h"
-#include "sen_als.h"
-#include "ADC1Dev.h"
 #include "stm8l15x_rtc.h"
 #include "UsartDev.h"
 #include "XlightComBus.h"

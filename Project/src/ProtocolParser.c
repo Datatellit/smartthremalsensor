@@ -2,7 +2,6 @@
 #include "_global.h"
 #include "MyMessage.h"
 #include "xliNodeConfig.h"
-#include "button.h"
 #include "rf24l01.h"
 
 uint16_t delaySendTick = 0;

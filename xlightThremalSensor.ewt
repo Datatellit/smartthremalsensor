@@ -177,9 +177,6 @@
     <group>
       <name>src</name>
       <file>
-        <name>$PROJ_DIR$\Project\src\ADC1Dev.c</name>
-      </file>
-      <file>
         <name>$PROJ_DIR$\Project\src\led.c</name>
       </file>
       <file>
@@ -187,9 +184,6 @@
       </file>
       <file>
         <name>$PROJ_DIR$\Project\src\ProtocolParser.c</name>
-      </file>
-      <file>
-        <name>$PROJ_DIR$\Project\src\sen_als.c</name>
       </file>
       <file>
         <name>$PROJ_DIR$\Project\src\stm8l15x_it.c</name>
