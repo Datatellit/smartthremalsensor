@@ -103,3 +103,12 @@ void Msg_Presentation() {
   memcpy(sndMsg.payload.data, _uniqueID, UNIQUE_ID_LEN);
   bMsgReady = 1;
 }
+
+// Device Status Notification
+void Msg_DevState(const uint8_t _state) {
+  build(NODEID_GATEWAY, gConfig.subID, C_REQ, V_STATUS, 0, 1);
+  moSetLength(1);
+  moSetPayloadType(P_BYTE);
+  sndMsg.payload.bValue = _state;
+  bMsgReady = 1;
+}

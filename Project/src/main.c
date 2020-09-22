@@ -1,11 +1,13 @@
 #include "_global.h"
 #include "delay.h"
-#include "rf24l01.h"
-#include "timer4.h"
 #include "MyMessage.h"
 #include "ProtocolParser.h"
+#include "rf24l01.h"
 #include "stm8l15x_rtc.h"
+#include "timer4.h"
+#ifndef RF24
 #include "UsartDev.h"
+#endif
 #include "XlightComBus.h"
 
 /*
@@ -33,11 +35,14 @@ Connections:
 
 */
 
+/* Private define ------------------------------------------------------------*/
+// Keep alive message interval, around 6 seconds
+#define MAX_RF_FAILED_TIME              20      // Reset RF module when reach max failed times of sending
+#define MAX_RF_RESET_TIME               3       // Reset Node when reach max times of RF module consecutive reset
 
-#define MAX_RF_FAILED_TIME              10      // Reset RF module when reach max failed times of sending
+#define SEND_MAX_INTERVAL_PIR           600     // about 6s (600 * 10ms)
 
-
-
+/* Public variables ---------------------------------------------------------*/
 // Public variables
 Config_t gConfig;
 
@@ -50,21 +55,31 @@ bool gIsStatusChanged = FALSE;
 bool gIsConfigChanged = FALSE;
 bool gResetRF = FALSE;
 bool gResetNode = FALSE;
+bool gResendPresentation = FALSE;
+uint8_t gSendDelayTick = 0;
+
+/* Private variables ---------------------------------------------------------*/
+uint8_t mSysStatus = SYS_ST_INIT;
+
 //////////////////pir collect//////////////////
 uint8_t pir_check_data = 0;
 uint8_t pir_value = 0;
 bool pir_ready = FALSE;
 uint16_t pir_tick = 0;
-#define SEND_MAX_INTERVAL_PIR                    600    // about 6s (600 * 10ms)
 //////////////////pir collect//////////////////
 
 uint8_t _uniqueID[UNIQUE_ID_LEN];
+
+// Keep Alive Timer
+uint16_t mTimerKeepAlive = 0;
 uint8_t m_cntRFSendFailed = 0;
+uint8_t m_cntRFReset = 0;
 
 uint16_t pirofftimeout = 0;
 uint8_t mutex;
-void tmrProcess();
 
+/* Private function prototypes -----------------------------------------------*/
+void tmrProcess();
 
 static void clock_init(void)
 {
@@ -86,13 +101,29 @@ void SaveConfig()
 #endif  
 }*/
 
+void SetSysState(const uint8_t _st)
+{
+    uint8_t lv_st = _st;
+    if( mSysStatus != lv_st ) {
+        mSysStatus = lv_st;
+        // Change LED Status Indicator accordingly
+        ledRGB_changed(mSysStatus);
+        // Notify the Gateway
+        Msg_DevState(mSysStatus);
+    }
+}
+
+uint8_t GetSysState()
+{
+    return mSysStatus;
+}
+
 // Save config to Flash
 void SaveBackupConfig()
 {
   if( gNeedSaveBackup ) {
     // Overwrite entire config bakup FLASH
-    if(Flash_WriteDataBlock(BACKUP_CONFIG_BLOCK_NUM, (uint8_t *)&gConfig, sizeof(gConfig)))
-    {
+    if(Flash_WriteDataBlock(BACKUP_CONFIG_BLOCK_NUM, (uint8_t *)&gConfig, sizeof(gConfig))) {
       gNeedSaveBackup = FALSE;
     }
   }
@@ -105,8 +136,7 @@ void SaveStatusData()
     uint8_t pData[50] = {0};
     uint16_t nLen = (uint16_t)(&(gConfig.nodeID)) - (uint16_t)(&gConfig);
     memcpy(pData, (uint8_t *)&gConfig, nLen);
-    if(Flash_WriteDataBlock(STATUS_DATA_NUM, pData, nLen))
-    {
+    if(Flash_WriteDataBlock(STATUS_DATA_NUM, pData, nLen)) {
       gIsStatusChanged = FALSE;
     }
 }
@@ -121,8 +151,7 @@ void SaveConfig()
   } 
   if( gIsConfigChanged ) {
     // Overwrite entire config FLASH
-    if(Flash_WriteDataBlock(0, (uint8_t *)&gConfig, sizeof(gConfig)))
-    {
+    if(Flash_WriteDataBlock(0, (uint8_t *)&gConfig, sizeof(gConfig))) {
       gIsStatusChanged = FALSE;
       gIsConfigChanged = FALSE;
       gNeedSaveBackup = TRUE;
@@ -133,53 +162,15 @@ void SaveConfig()
 
 bool IsConfigInvalid() {
   return( gConfig.version > XLA_VERSION || gConfig.version < XLA_MIN_VER_REQUIREMENT 
-       || /*!IS_VALID_REMOTE(gConfig.type)  || */gConfig.nodeID == 0
+       || (gConfig.type != SEN_TYP_PIR && gConfig.type != SEN_TYP_ZENSOR) 
+       || gConfig.nodeID == 0
        || gConfig.rfPowerLevel > RF24_PA_MAX || gConfig.rfChannel > 127 || gConfig.rfDataRate > RF24_250KBPS );
 }
 
 bool isNodeIdInvalid(uint8_t nodeid)
 {
-  return( !IS_SENSOR_NODEID(nodeid)  );
+  return( !IS_SENSOR_NODEID(nodeid) );
 }
-
-/*// Load config from Flash
-void LoadConfig()
-{
-    // Load the most recent settings from FLASH
-    Flash_ReadBuf(FLASH_DATA_EEPROM_START_PHYSICAL_ADDRESS, (uint8_t *)&gConfig, sizeof(gConfig));
-    if( IsConfigInvalid() ) {
-      Flash_ReadBuf(BACKUP_CONFIG_ADDRESS, (uint8_t *)&gConfig, sizeof(gConfig));
-      if( IsConfigInvalid() ) {
-        memset(&gConfig, 0x00, sizeof(gConfig));
-        gConfig.version = XLA_VERSION;
-        gConfig.indDevice = 0;
-        gConfig.present = 0;
-        gConfig.inPresentation = 0;
-        gConfig.enSDTM = 0;
-        gConfig.rptTimes = 1;
-        gConfig.nodeID = 130;
-        gConfig.rfChannel = RF24_CHANNEL;
-        gConfig.rfPowerLevel = RF24_PA_MAX;
-        gConfig.rfDataRate = RF24_250KBPS;      
-        memcpy(gConfig.NetworkID, RF24_BASE_RADIO_ID, ADDRESS_WIDTH);
-      }
-      gIsConfigChanged = TRUE;
-    }
-    else {
-      uint8_t bytVersion;
-      Flash_ReadBuf(BACKUP_CONFIG_ADDRESS, (uint8_t *)&bytVersion, sizeof(bytVersion));
-      if( bytVersion != gConfig.version ) gNeedSaveBackup = TRUE;
-    }
-    // Load the most recent status from FLASH
-    uint8_t pData[50] = {0};
-    uint16_t nLen = (uint16_t)(&(gConfig.nodeID)) - (uint16_t)(&gConfig);
-    Flash_ReadBuf(STATUS_DATA_ADDRESS, pData, nLen);
-    if(pData[0] >= XLA_MIN_VER_REQUIREMENT && pData[0] <= XLA_VERSION)
-    {
-      memcpy(&gConfig,pData,nLen);
-    }
-    gConfig.rfChannel = 87;
-}*/
 
 void UpdateNodeAddress(uint8_t _tx) {
   memcpy(rx_addr, gConfig.NetworkID, ADDRESS_WIDTH);
@@ -219,73 +210,108 @@ bool WaitMutex(uint32_t _timeout) {
 // reset rf
 void ResetRFModule()
 {
-  if(gResetRF)
-  {
+  if(gResetRF) {
     RF24L01_init();
     NRF2401_EnableIRQ();
     UpdateNodeAddress(NODEID_GATEWAY);
     gResetRF=FALSE;
     RF24L01_set_mode_RX();
   }
+  if( gResendPresentation ) {
+    // Send Presentation to confirm new settings are working
+    Msg_Presentation();
+    gResendPresentation = FALSE;
+  }
 }
 
+uint16_t GetDelayTick(const uint8_t ds)
+{
+  uint16_t lv_delaytick = 0;
+  if(ds == BROADCAST_ADDRESS) {
+    // base = 210ms, delta = 100ms
+    lv_delaytick = ((gConfig.nodeID - NODEID_MIN_SUPERSENSOR + 1) % 32 ) * 10 + 11;
+  } else {
+    lv_delaytick = 4;   // 40ms
+  }
+  return lv_delaytick;
+}
 
 // Send message and switch back to receive mode
 bool SendMyMessage() {
-  if( bMsgReady ) {
-    
+#ifdef RF24  
+  if( bMsgReady && delaySendTick == 0 ) {
     // Change tx destination if necessary
     NeedUpdateRFAddress(sndMsg.header.destination);
-    
+      
     uint8_t lv_tried = 0;
     uint16_t delay;
     while (lv_tried++ <= gConfig.rptTimes ) {
-      feed_wwdg();
+      
       mutex = 0;
       RF24L01_set_mode_TX();
       RF24L01_write_payload(psndMsg, PLOAD_WIDTH);
       WaitMutex(0x1FFFF);
       if (mutex == 1) {
         m_cntRFSendFailed = 0;
+        m_cntRFReset = 0;
         break; // sent sccessfully
-      } else if( m_cntRFSendFailed++ > MAX_RF_FAILED_TIME ) {
-        // Reset RF module
-        m_cntRFSendFailed = 0;
-        //WWDG->CR = 0x80;
-        // RF24 Chip in low power
-        RF24L01_DeInit();
-        delay = 0x1FFF;
-        while(delay--)feed_wwdg();
-        RF24L01_init();
-        NRF2401_EnableIRQ();
-        UpdateNodeAddress(NODEID_GATEWAY);
-        continue;
+      } else {
+        m_cntRFSendFailed++;
+        if( m_cntRFSendFailed >= MAX_RF_FAILED_TIME ) {
+          m_cntRFSendFailed = 0;
+          m_cntRFReset++;
+          if( m_cntRFReset >= MAX_RF_RESET_TIME ) {
+            // Cold Reset
+            WWDG->CR = 0x80;
+            m_cntRFReset = 0;
+            break;
+          } else if( m_cntRFReset >= 2 ) {
+            // Reset whole node
+            mSysStatus = SYS_ST_RESET;
+            break;
+          }
+
+          // Reset RF module
+          //RF24L01_DeInit();
+          delay = 0x1FFF;
+          while(delay--)feed_wwdg();
+          RF24L01_init();
+          NRF2401_EnableIRQ();
+          UpdateNodeAddress(NODEID_GATEWAY);
+          continue;
+        }
       }
       
       //The transmission failed, Notes: mutex == 2 doesn't mean failed
       //It happens when rx address defers from tx address
       //asm("nop"); //Place a breakpoint here to see memory
       // Repeat the message if necessary
-      uint16_t delay = 0xFFF;
+      delay = 0xFFF;
       while(delay--)feed_wwdg();
     }
     
     // Switch back to receive mode
     bMsgReady = 0;
     RF24L01_set_mode_RX();
+    
+    // Reset Keep Alive Timer
+    mTimerKeepAlive = 0;
   }
-
   return(mutex > 0);
+#else
+  return FALSE;
+#endif  
 }
 
+// Init data and other GPIOs
 void dataio_init()
 {
-  GPIO_Init(GPIOC, GPIO_Pin_4, GPIO_Mode_In_PU_IT);
-  EXTI_DeInit();
-  EXTI_SetPinSensitivity(EXTI_Pin_4, EXTI_Trigger_Rising_Falling);
-  // led
-  GPIO_Init(GPIOD, GPIO_Pin_6, GPIO_Mode_Out_PP_High_Fast);
-  GPIO_WriteBit(GPIOD,GPIO_Pin_6,RESET);
+    GPIO_Init(GPIOC, GPIO_Pin_4, GPIO_Mode_In_PU_IT);
+    EXTI_DeInit();
+    EXTI_SetPinSensitivity(EXTI_Pin_4, EXTI_Trigger_Rising_Falling);
+    // led
+    GPIO_Init(GPIOD, GPIO_Pin_6, GPIO_Mode_Out_PP_High_Slow);
+    GPIO_WriteBit(GPIOD, GPIO_Pin_6, RESET);
 }
 
 int main( void ) {
@@ -294,33 +320,46 @@ int main( void ) {
   clock_init();
   timer_init();
   dataio_init();
+  
+  // System enter setup state
+  SetSysState(SYS_ST_SETUP);
+  
+#ifdef RF24
   // Go on only if NRF chip is presented
   RF24L01_init();
   while(!NRF24L01_Check());
+#endif
   
   // Load config from Flash
   FLASH_DeInit();
   Read_UniqueID(_uniqueID, UNIQUE_ID_LEN);
-  LoadConfig();
+  LoadConfig();  
   ////// not common config check/////////////
-  if(gConfig.timeout == 0 || gConfig.timeout >= 60000)
-  { // invalid timeout
+  if(gConfig.timeout == 0 || gConfig.timeout >= 60000) { // invalid timeout
     gConfig.timeout = 5;
   }  
   ////// not common config check/////////////
+  
+#ifdef RF24  
   // NRF_IRQ
   NRF2401_EnableIRQ();
-
+#endif
+  
   // Init Watchdog
   wwdg_init();
   
   TIM4_10ms_handler = tmrProcess;
 
   // Send Presentation Message
+  UpdateNodeAddress(NODEID_GATEWAY);
   Msg_Presentation();
   SendMyMessage();
+  
+  // System enter running state
+  SetSysState(SYS_ST_RUNNING);
+  
   uint8_t pre_pir_value = 255;
-  pir_value = (GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_4) == RESET)?0:1;
+  pir_value = (GPIO_ReadInputDataBit(GPIOC, GPIO_Pin_4) == RESET) ? 0 : 1;
   pir_ready = TRUE;
   while (1) {    
     // Feed the Watchdog
@@ -341,18 +380,15 @@ int main( void ) {
   }
 }
 
-
 // Execute timer operations
 void tmrProcess() {
   pir_tick++;
-  if(pirofftimeout>0)
-  {
+  if(pirofftimeout > 0) {
     pirofftimeout--;
   }
-  if(pirofftimeout == 0 && pir_check_data == 0)
-  {
+  if(pirofftimeout == 0 && pir_check_data == 0) {
     pir_value = 0;
-    GPIO_WriteBit(GPIOD,GPIO_Pin_6,RESET);
+    GPIO_WriteBit(GPIOD, GPIO_Pin_6, RESET);
   } 
 }
 
@@ -388,17 +424,14 @@ INTERRUPT_HANDLER(EXTI4_IRQHandler, 12)
      it is recommended to set a breakpoint on the following instruction.
   */
   pir_ready = TRUE;
-  if(GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_4) == RESET)
-  {
+  if(GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_4) == RESET) {
     //pir_value = 0;
     pir_check_data = 0;
     pirofftimeout=gConfig.timeout*100;
-  }
-  else
-  {
+  } else {
     pir_check_data = 1;
     pir_value = 1;
-    GPIO_WriteBit(GPIOD,GPIO_Pin_6,SET);
+    GPIO_WriteBit(GPIOD, GPIO_Pin_6, SET);
   }
   EXTI_ClearITPendingBit(EXTI_IT_Pin4);    
 }

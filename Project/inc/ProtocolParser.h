@@ -12,8 +12,7 @@ uint8_t ParseProtocol();
 
 void Msg_RequestNodeID();
 void Msg_Presentation();
+void Msg_DevState(const uint8_t _state);
 void Msg_SendPIR(uint8_t _value);
-
-bool ProcessOutputCfgMsg();
 
 #endif /* __PROTOCOL_PARSER_H */
