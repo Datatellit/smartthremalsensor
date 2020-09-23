@@ -3,7 +3,7 @@
 
 #include "stm8l15x_gpio.h"
 
-//LED硬件定义
+// LED硬件定义
 #define LED_RED_GPIO_PORT			GPIOD								
 #define LED_RED_GPIO_PIN			GPIO_Pin_7
 
@@ -17,20 +17,25 @@ typedef enum LedPort
 	LED_GREEN			        // 绿色LED
 } LedPortType;
 
-void drv_led_init( void );
-void drv_led_on( LedPortType LedPort );
-void drv_led_off( LedPortType LedPort );
-void drv_led_flashing( LedPortType LedPort );
+typedef enum LedPortState
+{
+	LED_ST_OFF = 0,
+	LED_ST_ON,
+    LED_ST_FLASH
+} LedPortState;
+
+void drv_led_init(const uint8_t _reversed);
+void drv_led_change(const LedPortType _ledPort, const LedPortState _ledState);
 
 // 红色LED操作函数
-#define led_red_on( )				drv_led_on( LED_RED )
-#define led_red_off( )				drv_led_off( LED_RED )
-#define led_red_flashing( )			drv_led_flashing( LED_RED )
+#define led_red_on( )				drv_led_change( LED_RED, LED_ST_ON )
+#define led_red_off( )				drv_led_change( LED_RED, LED_ST_OFF )
+#define led_red_flashing( )			drv_led_change( LED_RED, LED_ST_FLASH )
 
 // 绿色LED操作函数
-#define led_green_on( )				drv_led_on( LED_GREEN )
-#define led_green_off( )			drv_led_off( LED_GREEN )
-#define led_green_flashing( )       drv_led_flashing( LED_GREEN )
+#define led_green_on( )				drv_led_change( LED_GREEN, LED_ST_ON )
+#define led_green_off( )			drv_led_change( LED_GREEN, LED_ST_OFF )
+#define led_green_flashing( )       drv_led_change( LED_GREEN, LED_ST_FLASH )
 
 #endif
 

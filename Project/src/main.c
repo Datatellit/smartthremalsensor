@@ -1,5 +1,6 @@
 #include "_global.h"
 #include "delay.h"
+#include "led.h"
 #include "MyMessage.h"
 #include "ProtocolParser.h"
 #include "rf24l01.h"
@@ -107,7 +108,7 @@ void SetSysState(const uint8_t _st)
     if( mSysStatus != lv_st ) {
         mSysStatus = lv_st;
         // Change LED Status Indicator accordingly
-        ledRGB_changed(mSysStatus);
+        //if power_low, led_red_on();
         // Notify the Gateway
         Msg_DevState(mSysStatus);
     }
@@ -309,9 +310,6 @@ void dataio_init()
     GPIO_Init(GPIOC, GPIO_Pin_4, GPIO_Mode_In_PU_IT);
     EXTI_DeInit();
     EXTI_SetPinSensitivity(EXTI_Pin_4, EXTI_Trigger_Rising_Falling);
-    // led
-    GPIO_Init(GPIOD, GPIO_Pin_6, GPIO_Mode_Out_PP_High_Slow);
-    GPIO_WriteBit(GPIOD, GPIO_Pin_6, RESET);
 }
 
 int main( void ) {
@@ -321,6 +319,9 @@ int main( void ) {
   timer_init();
   dataio_init();
   
+  // Init R&G-LED Indicator
+  drv_led_init(LED_PIN_INIT_HIGH);
+    
   // System enter setup state
   SetSysState(SYS_ST_SETUP);
   
@@ -388,7 +389,7 @@ void tmrProcess() {
   }
   if(pirofftimeout == 0 && pir_check_data == 0) {
     pir_value = 0;
-    GPIO_WriteBit(GPIOD, GPIO_Pin_6, RESET);
+    led_green_off();
   } 
 }
 
@@ -427,11 +428,11 @@ INTERRUPT_HANDLER(EXTI4_IRQHandler, 12)
   if(GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_4) == RESET) {
     //pir_value = 0;
     pir_check_data = 0;
-    pirofftimeout=gConfig.timeout*100;
+    pirofftimeout = gConfig.timeout*100;
   } else {
     pir_check_data = 1;
     pir_value = 1;
-    GPIO_WriteBit(GPIOD, GPIO_Pin_6, SET);
+    led_green_on();
   }
   EXTI_ClearITPendingBit(EXTI_IT_Pin4);    
 }

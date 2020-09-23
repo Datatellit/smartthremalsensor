@@ -1,65 +1,48 @@
 #include "led.h"
 
+// 初始状态为高 既 低电平有效
+uint8_t m_LED_PIN_InitHigh = 1;
+
 /**
   * @brief :LED初始化
   * @param :无
   * @note  :无
   * @retval:无
   */ 
-void drv_led_init( void )
+void drv_led_init(const uint8_t _reversed)
 {
-	//初始化LED引脚 推挽输出 慢速 初始状态为高
-	GPIO_Init( LED_RED_GPIO_PORT, LED_RED_GPIO_PIN, GPIO_Mode_Out_PP_High_Slow );
-	GPIO_Init( LED_GREEN_GPIO_PORT, LED_GREEN_GPIO_PIN, GPIO_Mode_Out_PP_High_Slow );
-    drv_led_off(LED_RED);
-    drv_led_off(LED_GREEN);
+    // 初始化LED引脚 推挽输出 慢速 
+    // 初始状态为高(_reversed == 1) 或 低(_reversed == 0)
+    m_LED_PIN_InitHigh = _reversed;
+    const GPIO_Mode_TypeDef lv_pinMode = (_reversed ? GPIO_Mode_Out_PP_High_Slow : GPIO_Mode_Out_PP_Low_Slow);
+	GPIO_Init( LED_RED_GPIO_PORT, LED_RED_GPIO_PIN, lv_pinMode );
+	GPIO_Init( LED_GREEN_GPIO_PORT, LED_GREEN_GPIO_PIN, lv_pinMode );
+    led_red_off();
+    led_green_off();
 }
 
 /**
   * @brief :LED亮
   * @param :
-  *			@LedPort:LED选择，红色或绿色
+  *			@_ledPort:LED选择，红色或绿色
+  *			@_ledState:LED状态，开、关或闪烁
   * @note  :无
   * @retval:无
   */
-void drv_led_on( LedPortType LedPort )
+void drv_led_change(const LedPortType _ledPort, const LedPortState _ledState)
 {
-	if( LED_RED == LedPort ) { // LED_RED
-		GPIO_SetBits( LED_RED_GPIO_PORT, LED_RED_GPIO_PIN );
-	} else { // LED_GREEN
-		GPIO_SetBits( LED_GREEN_GPIO_PORT, LED_GREEN_GPIO_PIN );
-	}	
-}
-
-/**
-  * @brief :LED灭
-  * @param :
-  *			@LedPort:LED选择，红色或绿色
-  * @note  :无
-  * @retval:无
-  */
-void drv_led_off( LedPortType LedPort )
-{
-	if( LED_RED == LedPort ) { // LED_RED
-		GPIO_ResetBits( LED_RED_GPIO_PORT, LED_RED_GPIO_PIN );	
-	} else { // LED_GREEN
-		GPIO_ResetBits( LED_GREEN_GPIO_PORT, LED_GREEN_GPIO_PIN );
-	}	
-}
-
-/**
-  * @brief :LED闪烁
-  * @param :
-  *			@LedPort:LED选择，红色或绿色
-  * @note  :无
-  * @retval:无
-  */
-void drv_led_flashing( LedPortType LedPort )
-{
-	
-	if( LED_RED == LedPort ) {
-		GPIO_ToggleBits( LED_RED_GPIO_PORT, LED_RED_GPIO_PIN );
-	} else {
-		GPIO_ToggleBits( LED_GREEN_GPIO_PORT, LED_GREEN_GPIO_PIN );
-	}
+    GPIO_TypeDef *lv_port;
+    uint8_t lv_pin;
+    if( LED_RED == _ledPort ) { // LED_RED
+        lv_port = LED_RED_GPIO_PORT;
+        lv_pin = LED_RED_GPIO_PIN;
+    } else {
+        lv_port = LED_GREEN_GPIO_PORT;
+        lv_pin = LED_GREEN_GPIO_PIN;
+    }
+    if( _ledState == LED_ST_FLASH ) {
+        GPIO_ToggleBits(lv_port, lv_pin);
+    } else {
+        GPIO_WriteBit(lv_port, lv_pin, (BitAction)(m_LED_PIN_InitHigh ^ _ledState));
+    }    
 }
