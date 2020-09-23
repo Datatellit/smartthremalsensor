@@ -23,7 +23,7 @@
 #define XLA_VERSION               0x31                      // 3.1 
 #define XLA_MIN_VER_REQUIREMENT   0x31
 
-#define LED_PIN_INIT_HIGH         1         // Button LED Pin High or Low on initialization
+#define LED_PIN_INIT_HIGH         0         // Button LED Pin High or Low on initialization
 
 typedef struct
 {
