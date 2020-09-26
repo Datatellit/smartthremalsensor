@@ -61,6 +61,7 @@ extern bool gResetNode;
 extern bool gResendPresentation;
 
 extern uint8_t _uniqueID[UNIQUE_ID_LEN];
+extern uint8_t mSysStatus;
 
 bool WaitMutex(uint32_t _timeout);
 void RF24L01_IRQ_Handler();

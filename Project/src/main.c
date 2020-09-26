@@ -1,10 +1,10 @@
 #include "_global.h"
+#include "ADC1Dev.h"
 #include "delay.h"
 #include "led.h"
 #include "MyMessage.h"
 #include "ProtocolParser.h"
 #include "rf24l01.h"
-#include "stm8l15x_rtc.h"
 #include "timer4.h"
 #ifndef RF24
 #include "UsartDev.h"
@@ -43,8 +43,11 @@ Connections:
 
 #define SEND_MAX_INTERVAL_PIR           600     // about 6s (600 * 10ms)
 
+#define POWER_CHECK_INTERVAL            40      // about 400ms (40 * 10ms)
+#define DC_FULLPOWER                    460
+#define DC_LOWPOWER                     368
+
 /* Public variables ---------------------------------------------------------*/
-// Public variables
 Config_t gConfig;
 
 MyMessage_t sndMsg;
@@ -57,7 +60,6 @@ bool gIsConfigChanged = FALSE;
 bool gResetRF = FALSE;
 bool gResetNode = FALSE;
 bool gResendPresentation = FALSE;
-uint8_t gSendDelayTick = 0;
 
 /* Private variables ---------------------------------------------------------*/
 uint8_t mSysStatus = SYS_ST_INIT;
@@ -75,6 +77,7 @@ uint8_t _uniqueID[UNIQUE_ID_LEN];
 uint16_t mTimerKeepAlive = 0;
 uint8_t m_cntRFSendFailed = 0;
 uint8_t m_cntRFReset = 0;
+uint8_t m_nPowerCheckTick = POWER_CHECK_INTERVAL;
 
 uint16_t pirofftimeout = 0;
 uint8_t mutex;
@@ -91,32 +94,102 @@ static void clock_init(void)
   //CLK_ClockSecuritySystemEnable();
 }
 
-/*// Save config to Flash
-void SaveConfig()
-{
-#ifndef ENABLE_SDTM
-  if( gIsConfigChanged ) {
-    Flash_WriteBuf(FLASH_DATA_EEPROM_START_PHYSICAL_ADDRESS, (uint8_t *)&gConfig, sizeof(gConfig));
-    gIsConfigChanged = FALSE;
-  }
-#endif  
-}*/
-
 void SetSysState(const uint8_t _st)
 {
-    uint8_t lv_st = _st;
-    if( mSysStatus != lv_st ) {
-        mSysStatus = lv_st;
-        // Change LED Status Indicator accordingly
-        //if power_low, led_red_on();
+    if( mSysStatus != _st ) {
+        mSysStatus = _st;
         // Notify the Gateway
-        Msg_DevState(mSysStatus);
+        Msg_DevState(mSysStatus, 0);
     }
 }
 
 uint8_t GetSysState()
 {
     return mSysStatus;
+}
+
+/**
+  * @brief  configure GPIOs before entering low power
+	* @caller lowpower_config
+  * @param None
+  * @retval None
+  */  
+void GPIO_LowPower_Config(void)
+{
+    // Note: don't change PIR pin and green LED pin anyway
+    GPIO_Init(GPIOA, GPIO_Pin_2|GPIO_Pin_3|GPIO_Pin_4|GPIO_Pin_5|GPIO_Pin_6|GPIO_Pin_7, GPIO_Mode_Out_PP_Low_Slow);
+    GPIO_Init(GPIOB, GPIO_Pin_0|GPIO_Pin_1|GPIO_Pin_2|GPIO_Pin_3, GPIO_Mode_Out_PP_Low_Slow);
+    GPIO_Init(GPIOC, GPIO_Pin_0|GPIO_Pin_1|GPIO_Pin_2|GPIO_Pin_3|GPIO_Pin_5|GPIO_Pin_7, GPIO_Mode_Out_PP_Low_Slow);
+    GPIO_Init(GPIOD, GPIO_Pin_2|GPIO_Pin_3|GPIO_Pin_4|GPIO_Pin_5|GPIO_Pin_7, GPIO_Mode_Out_PP_Low_Slow);
+    GPIO_Init(GPIOE, GPIO_Pin_0|GPIO_Pin_1|GPIO_Pin_2|GPIO_Pin_3|GPIO_Pin_5, GPIO_Mode_Out_PP_Low_Slow);
+    GPIO_Init(GPIOF, GPIO_Pin_1|GPIO_Pin_2|GPIO_Pin_3|GPIO_Pin_5|GPIO_Pin_6|GPIO_Pin_7, GPIO_Mode_Out_PP_Low_Slow);
+}
+
+// Enter Low Power Mode, which can be woken up by external interupts
+void lowpower_config(void) {
+  // Enter Sleeping Mode
+  // Don't use SetSysState(SYS_ST_SLEEP), because we don't want to send RF message
+  mSysStatus = SYS_ST_SLEEP;
+  
+  // Set STM8 in low power
+  PWR->CSR2 = 0x2;
+  
+  // Stop Timers
+  //TIM1_DeInit();
+  //TIM2_DeInit();
+  //TIM3_DeInit();
+  TIM4_DeInit();
+  
+  // Set GPIO in low power
+  GPIO_LowPower_Config();
+  
+  // RF24 Chip in low power
+  RF24L01_DeInit();
+  
+  // TODO how process???
+  /*while ((CLK->ICKCR & 0x04) != 0x00) {
+    feed_wwdg();
+  }*/
+  
+  ADC_DeInit(ADC1);
+  
+  // Stop peripheral clocks
+  CLK_PeripheralClockConfig(CLK_Peripheral_TIM5, DISABLE);
+  CLK_PeripheralClockConfig(CLK_Peripheral_TIM4, DISABLE);
+  CLK_PeripheralClockConfig(CLK_Peripheral_TIM3, DISABLE);
+  CLK_PeripheralClockConfig(CLK_Peripheral_TIM2, DISABLE);
+  CLK_PeripheralClockConfig(CLK_Peripheral_TIM1, DISABLE);
+  CLK_PeripheralClockConfig(CLK_Peripheral_I2C1, DISABLE);
+  CLK_PeripheralClockConfig(CLK_Peripheral_SPI1, DISABLE);
+  CLK_PeripheralClockConfig(CLK_Peripheral_USART1, DISABLE);
+  CLK_PeripheralClockConfig(CLK_Peripheral_DAC, DISABLE);
+  CLK_PeripheralClockConfig(CLK_Peripheral_ADC1, DISABLE);
+  CLK_PeripheralClockConfig(CLK_Peripheral_RTC, DISABLE);
+  CLK_PeripheralClockConfig(CLK_Peripheral_LCD, DISABLE);
+  CLK_PeripheralClockConfig(CLK_Peripheral_AES, DISABLE);
+}
+
+// Resume Normal Mode
+void wakeup_config(void) {
+  // System Woke Up
+  mSysStatus = SYS_ST_ON_BATTERY;
+
+  clock_init();
+  timer_init();
+  //dataio_init();
+  ADC_Config();
+
+  // Init R&G-LED Indicator
+  //drv_led_init(LED_PIN_INIT_HIGH);
+  led_red_off();    // Only turn off red, then it will be changed in timer handler according to battery state
+  
+  RF24L01_init();
+  NRF2401_EnableIRQ();
+  UpdateNodeAddress(NODEID_GATEWAY);
+  
+#ifdef DEBUG_LOG
+  usart_config(9600);
+#endif
 }
 
 // Save config to Flash
@@ -199,7 +272,6 @@ bool NeedUpdateRFAddress(uint8_t _dest) {
   return rc;
 }
 
-
 bool WaitMutex(uint32_t _timeout) {
   while(_timeout--) {
     if( mutex > 0 ) return TRUE;
@@ -239,7 +311,7 @@ uint16_t GetDelayTick(const uint8_t ds)
 
 // Send message and switch back to receive mode
 bool SendMyMessage() {
-#ifdef RF24  
+#ifdef RF24
   if( bMsgReady && delaySendTick == 0 ) {
     // Change tx destination if necessary
     NeedUpdateRFAddress(sndMsg.header.destination);
@@ -307,9 +379,53 @@ bool SendMyMessage() {
 // Init data and other GPIOs
 void dataio_init()
 {
+    // 人感信号检测口
     GPIO_Init(GPIOC, GPIO_Pin_4, GPIO_Mode_In_PU_IT);
     EXTI_DeInit();
+    // 检测上升沿+下降沿才有效
     EXTI_SetPinSensitivity(EXTI_Pin_4, EXTI_Trigger_Rising_Falling);
+}
+
+uint16_t m_eqv;
+void Check_eq()
+{
+  uint16_t eq1, eq2;
+  eq_checkData(&eq1, &eq2);
+  printnum(eq1);
+  printlog("-");
+  printnum(eq2);
+  if(eq1 > eq2 + 250) {
+    // eqv1-eqv2 > 0.2v (eqv1 = eq1*3.3/4096)
+    // 电池进电: 红灯亮、绿灯灭
+    printlog("charge...");
+    led_red_on();
+    //led_green_off();
+    SetSysState(SYS_ST_CHARGING);
+  } else { // 电池不进电（插充电器但电池已充满或者没插充电器）
+    printlog("normal...");
+    m_eqv = (uint32_t)eq2 * 330 / 2048;
+    printnum(m_eqv);
+    if(m_eqv >= DC_FULLPOWER) {
+      // 插充电器，电池已充满：红灯灭、绿灯亮
+      printlog("full...");
+      led_red_off();
+      //led_green_on();
+      SetSysState(SYS_ST_RUNNING);
+    } else {
+      // 没插充电器（电池供电）：红灯闪或灭、绿灯灭
+      printlog("not full...");
+      //led_green_off();      
+      if(m_eqv < DC_LOWPOWER) {
+        // 电池电压低：红灯闪
+        SetSysState(SYS_ST_LOW_BATTERY);
+        led_red_flashing();
+      } else {
+        // 电池电压正常：红灯灭
+        SetSysState(SYS_ST_ON_BATTERY);
+        led_red_off();
+      }
+    }
+  }
 }
 
 int main( void ) {
@@ -351,10 +467,17 @@ int main( void ) {
   
   TIM4_10ms_handler = tmrProcess;
 
+  // Init ADC
+  ADC_Config();
+  
   // Send Presentation Message
   UpdateNodeAddress(NODEID_GATEWAY);
   Msg_Presentation();
   SendMyMessage();
+
+#ifdef DEBUG_LOG
+  usart_config(9600);
+#endif
   
   // System enter running state
   SetSysState(SYS_ST_RUNNING);
@@ -365,7 +488,26 @@ int main( void ) {
   while (1) {    
     // Feed the Watchdog
     feed_wwdg();   
-
+    ////////////rfscanner process///////////////////////////////
+    ProcessOutputCfgMsg(); 
+    
+    // reset rf if required
+    ResetRFModule();  
+    
+    // Enter Low Power Mode
+    if( (mSysStatus == SYS_ST_ON_BATTERY || mSysStatus == SYS_ST_LOW_BATTERY) && !gConfig.inConfigMode ) {
+      if( tmrIdleDuration > TIMEOUT_IDLE ) {
+        printlog("enter low...");
+        tmrIdleDuration = 0;
+        lowpower_config();
+        halt();
+      }
+    } else if( mSysStatus == SYS_ST_SLEEP ) { 
+        tmrIdleDuration = 0;
+        // Wakeup
+        wakeup_config();
+    }
+    
     if( pre_pir_value != pir_value  || pir_tick > SEND_MAX_INTERVAL_PIR ) {
         // Reset send timer
         pir_tick = 0;
@@ -373,16 +515,29 @@ int main( void ) {
         Msg_SendPIR(pre_pir_value);
         pir_ready = FALSE;
     }
+    
+    // Send message if ready
     SendMyMessage();
+    
     // Save Config if Changed
     SaveConfig();
+    
     // Save config into backup area
     SaveBackupConfig();
   }
 }
 
-// Execute timer operations
+// 10ms timer handler
 void tmrProcess() {
+  // Ticks
+  mTimerKeepAlive++;
+  if( delaySendTick > 0) delaySendTick--;
+  
+  if( m_nPowerCheckTick++ % POWER_CHECK_INTERVAL == 0 ) {
+    // Check Power voltage
+    Check_eq();
+  }
+    
   pir_tick++;
   if(pirofftimeout > 0) {
     pirofftimeout--;
@@ -390,7 +545,7 @@ void tmrProcess() {
   if(pirofftimeout == 0 && pir_check_data == 0) {
     pir_value = 0;
     led_green_off();
-  } 
+  }  
 }
 
 void RF24L01_IRQ_Handler() {
@@ -424,11 +579,12 @@ INTERRUPT_HANDLER(EXTI4_IRQHandler, 12)
   /* In order to detect unexpected events during development,
      it is recommended to set a breakpoint on the following instruction.
   */
+  tmrIdleDuration = 0;
   pir_ready = TRUE;
   if(GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_4) == RESET) {
     //pir_value = 0;
     pir_check_data = 0;
-    pirofftimeout = gConfig.timeout*100;
+    pirofftimeout = gConfig.timeout * 100;
   } else {
     pir_check_data = 1;
     pir_value = 1;

@@ -159,6 +159,9 @@
         <name>$PROJ_DIR$\Project\inc\_global.h</name>
       </file>
       <file>
+        <name>$PROJ_DIR$\Project\inc\ADC1Dev.h</name>
+      </file>
+      <file>
         <name>$PROJ_DIR$\Project\inc\led.h</name>
       </file>
       <file>
@@ -170,6 +173,9 @@
     </group>
     <group>
       <name>src</name>
+      <file>
+        <name>$PROJ_DIR$\Project\src\ADC1Dev.c</name>
+      </file>
       <file>
         <name>$PROJ_DIR$\Project\src\led.c</name>
       </file>
