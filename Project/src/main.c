@@ -6,9 +6,7 @@
 #include "ProtocolParser.h"
 #include "rf24l01.h"
 #include "timer4.h"
-#ifndef RF24
 #include "UsartDev.h"
-#endif
 #include "XlightComBus.h"
 
 /*
@@ -37,6 +35,9 @@ Connections:
 */
 
 /* Private define ------------------------------------------------------------*/
+// Use this to enable or disable Low Power Mode
+//#define ENABLE_LOW_POWER_MODE
+
 // Keep alive message interval, around 6 seconds
 #define MAX_RF_FAILED_TIME              20      // Reset RF module when reach max failed times of sending
 #define MAX_RF_RESET_TIME               3       // Reset Node when reach max times of RF module consecutive reset
@@ -46,6 +47,11 @@ Connections:
 #define POWER_CHECK_INTERVAL            40      // about 400ms (40 * 10ms)
 #define DC_FULLPOWER                    460
 #define DC_LOWPOWER                     368
+
+// Idle duration before enter low power mode
+#define TIMEOUT_IDLE                    300     // The unit is 10 ms, so the duration is 3 s.
+
+#define MAINLOOP_TIMEOUT                6000    // 60s for mainloop timeout
 
 /* Public variables ---------------------------------------------------------*/
 Config_t gConfig;
@@ -62,6 +68,9 @@ bool gResetNode = FALSE;
 bool gResendPresentation = FALSE;
 
 /* Private variables ---------------------------------------------------------*/
+// main-loop-dead-lock-check timer
+uint16_t m_MainloopTimeTick = 0;
+
 uint8_t mSysStatus = SYS_ST_INIT;
 
 //////////////////pir collect//////////////////
@@ -84,6 +93,7 @@ uint8_t mutex;
 
 /* Private function prototypes -----------------------------------------------*/
 void tmrProcess();
+void UpdateNodeAddress(const uint8_t _tx);
 
 static void clock_init(void)
 {
@@ -107,6 +117,9 @@ uint8_t GetSysState()
 {
     return mSysStatus;
 }
+
+/* Low Power Mode Code -------------------------------------------------------*/
+#ifdef ENABLE_LOW_POWER_MODE
 
 /**
   * @brief  configure GPIOs before entering low power
@@ -192,6 +205,8 @@ void wakeup_config(void) {
 #endif
 }
 
+#endif // Low Power Mode Code
+
 // Save config to Flash
 void SaveBackupConfig()
 {
@@ -206,6 +221,7 @@ void SaveBackupConfig()
 // Save status to Flash
 void SaveStatusData()
 {
+  if( gIsStatusChanged ) {
     // Skip the first byte (version)
     uint8_t pData[50] = {0};
     uint16_t nLen = (uint16_t)(&(gConfig.nodeID)) - (uint16_t)(&gConfig);
@@ -213,25 +229,27 @@ void SaveStatusData()
     if(Flash_WriteDataBlock(STATUS_DATA_NUM, pData, nLen)) {
       gIsStatusChanged = FALSE;
     }
+  }
 }
 
 // Save config to Flash
 void SaveConfig()
 {
-  if( gIsStatusChanged ) {
-    // Overwrite only Static & status parameters (the first part of config FLASH)
-    SaveStatusData();
-    gIsConfigChanged = TRUE;
-  } 
   if( gIsConfigChanged ) {
-    // Overwrite entire config FLASH
-    if(Flash_WriteDataBlock(0, (uint8_t *)&gConfig, sizeof(gConfig))) {
-      gIsStatusChanged = FALSE;
-      gIsConfigChanged = FALSE;
-      gNeedSaveBackup = TRUE;
-      return;
+    // Ensure Status has another chance to be saved even if Saving Config failed
+    gIsStatusChanged = TRUE;
+    // Overwrite entire config FLASH 
+    uint8_t Attmpts = 0;
+    while(++Attmpts <= 3) {
+      if(Flash_WriteDataBlock(0, (uint8_t *)&gConfig, sizeof(gConfig))) {
+        gIsStatusChanged = FALSE;
+        gIsConfigChanged = FALSE;
+        gNeedSaveBackup = TRUE;
+        break;
+      }
     }
-  } 
+  }
+  SaveStatusData();
 }
 
 bool IsConfigInvalid() {
@@ -241,12 +259,12 @@ bool IsConfigInvalid() {
        || gConfig.rfPowerLevel > RF24_PA_MAX || gConfig.rfChannel > 127 || gConfig.rfDataRate > RF24_250KBPS );
 }
 
-bool isNodeIdInvalid(uint8_t nodeid)
+bool isNodeIdInvalid(const uint8_t nodeid)
 {
-  return( !IS_SENSOR_NODEID(nodeid) );
+  return( !(IS_SENSOR_NODEID(nodeid) || IS_GROUP_NODEID(nodeid)) );
 }
 
-void UpdateNodeAddress(uint8_t _tx) {
+void UpdateNodeAddress(const uint8_t _tx) {
   memcpy(rx_addr, gConfig.NetworkID, ADDRESS_WIDTH);
   rx_addr[0] = gConfig.nodeID;
   memcpy(tx_addr, gConfig.NetworkID, ADDRESS_WIDTH);
@@ -268,7 +286,6 @@ bool NeedUpdateRFAddress(uint8_t _dest) {
     UpdateNodeAddress(NODEID_GATEWAY);
     rc = TRUE;
   }
-  UpdateNodeAddress(NODEID_GATEWAY);
   return rc;
 }
 
@@ -287,14 +304,18 @@ void ResetRFModule()
     RF24L01_init();
     NRF2401_EnableIRQ();
     UpdateNodeAddress(NODEID_GATEWAY);
-    gResetRF=FALSE;
+    gResetRF = FALSE;
     RF24L01_set_mode_RX();
   }
   if( gResendPresentation ) {
     // Send Presentation to confirm new settings are working
-    Msg_Presentation();
+    Msg_Presentation(1);   // Require-Ack
     gResendPresentation = FALSE;
   }
+  if(gResetNode) {
+    mSysStatus = SYS_ST_RESET;
+    gResetNode = FALSE;
+  }  
 }
 
 uint16_t GetDelayTick(const uint8_t ds)
@@ -428,6 +449,15 @@ void Check_eq()
   }
 }
 
+void RestartCheck()
+{
+  if( m_MainloopTimeTick < MAINLOOP_TIMEOUT ) m_MainloopTimeTick++;
+  if( m_MainloopTimeTick >= MAINLOOP_TIMEOUT ) {
+    printlog("need restart!");
+    WWDG->CR = 0x80;
+  }
+}
+
 int main( void ) {
 
   // Init clock, timer and button
@@ -437,16 +467,7 @@ int main( void ) {
   
   // Init R&G-LED Indicator
   drv_led_init(LED_PIN_INIT_HIGH);
-    
-  // System enter setup state
-  SetSysState(SYS_ST_SETUP);
-  
-#ifdef RF24
-  // Go on only if NRF chip is presented
-  RF24L01_init();
-  while(!NRF24L01_Check());
-#endif
-  
+
   // Load config from Flash
   FLASH_DeInit();
   Read_UniqueID(_uniqueID, UNIQUE_ID_LEN);
@@ -454,12 +475,12 @@ int main( void ) {
   ////// not common config check/////////////
   if(gConfig.timeout == 0 || gConfig.timeout >= 60000) { // invalid timeout
     gConfig.timeout = 5;
+    gIsConfigChanged = TRUE;
   }  
   ////// not common config check/////////////
-  
-#ifdef RF24  
-  // NRF_IRQ
-  NRF2401_EnableIRQ();
+
+#ifdef DEBUG_LOG
+  usart_config(9600);
 #endif
   
   // Init Watchdog
@@ -469,61 +490,93 @@ int main( void ) {
 
   // Init ADC
   ADC_Config();
-  
-  // Send Presentation Message
-  UpdateNodeAddress(NODEID_GATEWAY);
-  Msg_Presentation();
-  SendMyMessage();
 
-#ifdef DEBUG_LOG
-  usart_config(9600);
-#endif
+  enableInterrupts();
   
-  // System enter running state
-  SetSysState(SYS_ST_RUNNING);
-  
+  // System enter setup state
+  SetSysState(SYS_ST_SETUP);
+  printlog("start...");
   uint8_t pre_pir_value = 255;
   pir_value = (GPIO_ReadInputDataBit(GPIOC, GPIO_Pin_4) == RESET) ? 0 : 1;
   pir_ready = TRUE;
-  while (1) {    
-    // Feed the Watchdog
-    feed_wwdg();   
-    ////////////rfscanner process///////////////////////////////
-    ProcessOutputCfgMsg(); 
-    
-    // reset rf if required
-    ResetRFModule();  
-    
-    // Enter Low Power Mode
-    if( (mSysStatus == SYS_ST_ON_BATTERY || mSysStatus == SYS_ST_LOW_BATTERY) && !gConfig.inConfigMode ) {
-      if( tmrIdleDuration > TIMEOUT_IDLE ) {
-        printlog("enter low...");
-        tmrIdleDuration = 0;
-        lowpower_config();
-        halt();
+  
+  while(1) { // Setup Loop
+#ifdef RF24
+    // Go on only if NRF chip is presented
+    RF24L01_init();
+    u16 timeoutRFcheck = 0;
+    while(!NRF24L01_Check()) {
+      if( timeoutRFcheck > 50 ) {
+        WWDG->CR = 0x80;
+        break;
       }
-    } else if( mSysStatus == SYS_ST_SLEEP ) { 
-        tmrIdleDuration = 0;
-        // Wakeup
-        wakeup_config();
+      // Feed the Watchdog
+      feed_wwdg();
+      // Reset main-loop-dead-lock-check timer
+      m_MainloopTimeTick = 0;
+      timeoutRFcheck++;
     }
-    
-    if( pre_pir_value != pir_value  || pir_tick > SEND_MAX_INTERVAL_PIR ) {
-        // Reset send timer
-        pir_tick = 0;
-        pre_pir_value = pir_value;
-        Msg_SendPIR(pre_pir_value);
-        pir_ready = FALSE;
-    }
-    
-    // Send message if ready
+    // NRF_IRQ
+    NRF2401_EnableIRQ();
+    UpdateNodeAddress(NODEID_GATEWAY);
+#endif
+  
+    // Send Presentation Message
+    Msg_Presentation(mSysStatus == SYS_ST_SETUP);
     SendMyMessage();
-    
-    // Save Config if Changed
-    SaveConfig();
-    
-    // Save config into backup area
-    SaveBackupConfig();
+    gIsStatusChanged = TRUE;
+
+    // System enter running state
+    SetSysState(SYS_ST_RUNNING);    
+    while( mSysStatus == SYS_ST_RUNNING ) { // Working Loop
+      // Feed the Watchdog
+      feed_wwdg();
+      // Reset main-loop-dead-lock-check timer
+      m_MainloopTimeTick = 0;
+      ////////////rfscanner process///////////////////////////////
+      ProcessOutputCfgMsg();
+      
+      // reset rf if required
+      ResetRFModule();  
+      
+/* Low Power Mode Code -------------------------------------------------------*/
+#ifdef ENABLE_LOW_POWER_MODE      
+      // Enter Low Power Mode
+      if( (mSysStatus == SYS_ST_ON_BATTERY || mSysStatus == SYS_ST_LOW_BATTERY) && !gConfig.inConfigMode ) {
+        if( tmrIdleDuration > TIMEOUT_IDLE ) {
+          printlog("enter low...");
+          tmrIdleDuration = 0;
+          lowpower_config();
+          halt();
+        }
+      } else if( mSysStatus == SYS_ST_SLEEP ) { 
+          tmrIdleDuration = 0;
+          // Make sure data can be sent right away
+          pir_tick = SEND_MAX_INTERVAL_PIR;
+          // Wakeup
+          wakeup_config();
+      }      
+#endif // Low Power Mode Code
+      
+      if( pir_ready ) {
+        if( pre_pir_value != pir_value || pir_tick >= SEND_MAX_INTERVAL_PIR ) {
+            // Reset send timer
+            pir_tick = 0;
+            pre_pir_value = pir_value;
+            Msg_SendPIR(pre_pir_value);
+            pir_ready = FALSE;
+        }
+      }
+      
+      // Send message if ready
+      SendMyMessage();
+      
+      // Save Config if Changed
+      SaveConfig();
+      
+      // Save config into backup area
+      SaveBackupConfig();
+    }
   }
 }
 
@@ -533,7 +586,7 @@ void tmrProcess() {
   mTimerKeepAlive++;
   if( delaySendTick > 0) delaySendTick--;
   
-  if( m_nPowerCheckTick++ % POWER_CHECK_INTERVAL == 0 ) {
+  if( (++m_nPowerCheckTick) % POWER_CHECK_INTERVAL == 0 ) {
     // Check Power voltage
     Check_eq();
   }
@@ -545,7 +598,10 @@ void tmrProcess() {
   if(pirofftimeout == 0 && pir_check_data == 0) {
     pir_value = 0;
     led_green_off();
-  }  
+  }
+  
+  // Restart Check
+  RestartCheck();
 }
 
 void RF24L01_IRQ_Handler() {
@@ -581,13 +637,13 @@ INTERRUPT_HANDLER(EXTI4_IRQHandler, 12)
   */
   tmrIdleDuration = 0;
   pir_ready = TRUE;
-  if(GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_4) == RESET) {
+  if(GPIO_ReadInputDataBit(GPIOC, GPIO_Pin_4) == RESET) {
     //pir_value = 0;
     pir_check_data = 0;
     pirofftimeout = gConfig.timeout * 100;
   } else {
     pir_check_data = 1;
-    pir_value = 1;
+    pir_value = 1;    
     led_green_on();
   }
   EXTI_ClearITPendingBit(EXTI_IT_Pin4);    

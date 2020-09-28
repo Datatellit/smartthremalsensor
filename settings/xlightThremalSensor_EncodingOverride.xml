@@ -13,6 +13,10 @@
     <path>D:\dtitcode\EndPoints_2020\smartthremalsensor\Project\src\led.c</path>
     <encoding>System</encoding>
   </override>
+  <override>
+    <path>D:\dtitcode\EndPoints_2020\xlightCommon\stm8l\Xlight-stm8l\UsartDev.c</path>
+    <encoding>System</encoding>
+  </override>
 </userOverrides>
 
 

@@ -48,8 +48,8 @@ typedef struct
   US token;                                 // Current token
   UC indDevice                :3;           // Current Device Index: [0..3]
   UC reserved2                :5;
-  US senMap                   :16;
   US timeout                  :16;          // pir timeout
+  UL senMap                   :32;          // Sensor Map
 } Config_t;
 
 extern Config_t gConfig;
@@ -63,12 +63,10 @@ extern bool gResendPresentation;
 extern uint8_t _uniqueID[UNIQUE_ID_LEN];
 extern uint8_t mSysStatus;
 
-bool WaitMutex(uint32_t _timeout);
 void RF24L01_IRQ_Handler();
-void UpdateNodeAddress(uint8_t _tx);
 bool SendMyMessage();
 bool IsConfigInvalid();
-bool isNodeIdInvalid(uint8_t nodeid);
+bool isNodeIdInvalid(const uint8_t nodeid);
 uint16_t GetDelayTick(const uint8_t ds);
 
 void SetSysState(const uint8_t _st);

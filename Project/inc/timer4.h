@@ -15,9 +15,6 @@
 // We will check the time at every 2mS *5 = 10mS
 #define TIM4_CHECK_TICKS        5
 
-// Idle duration before enter low power mode
-#define TIMEOUT_IDLE            300            // The unit is 10 ms, so the duration is 3 s.
-
 typedef void (*TM4_CallBack_t)();
 
 extern TM4_CallBack_t TIM4_10ms_handler;
