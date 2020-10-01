@@ -1603,6 +1603,12 @@
       <file>
         <name>$PROJ_DIR$\..\xlightCommon\xlightdefine\Business\ProtocolBus.h</name>
       </file>
+      <file>
+        <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\commonbusiness\XlightComBus.c</name>
+      </file>
+      <file>
+        <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\commonbusiness\XlightComBus.h</name>
+      </file>
     </group>
     <file>
       <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\common.c</name>
@@ -1633,12 +1639,6 @@
     </file>
     <file>
       <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\UsartDev.h</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\commonbusiness\XlightComBus.c</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\commonbusiness\XlightComBus.h</name>
     </file>
   </group>
   <group>

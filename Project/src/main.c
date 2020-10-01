@@ -205,6 +205,17 @@ void wakeup_config(void) {
 #endif
 }
 
+bool WakeupMeFromSleep()
+{
+    if( mSysStatus == SYS_ST_SLEEP ) { 
+        tmrIdleDuration = 0;
+        // Wakeup
+        wakeup_config();
+        return TRUE;
+    }
+    return FALSE;
+}
+
 #endif // Low Power Mode Code
 
 // Save config to Flash
@@ -313,6 +324,10 @@ void ResetRFModule()
     gResendPresentation = FALSE;
   }
   if(gResetNode) {
+#ifdef ENABLE_LOW_POWER_MODE    
+    // Wake Me up
+    WakeupMeFromSleep();
+#endif    
     mSysStatus = SYS_ST_RESET;
     gResetNode = FALSE;
   }  
@@ -361,7 +376,7 @@ bool SendMyMessage() {
             break;
           } else if( m_cntRFReset >= 2 ) {
             // Reset whole node
-            mSysStatus = SYS_ST_RESET;
+            gResetNode = TRUE;
             break;
           }
 
@@ -528,7 +543,7 @@ int main( void ) {
 
     // System enter running state
     SetSysState(SYS_ST_RUNNING);    
-    while( mSysStatus == SYS_ST_RUNNING ) { // Working Loop
+    while( mSysStatus > SYS_ST_INIT &&  mSysStatus < SYS_ST_RESET ) { // Working Loop
       // Feed the Watchdog
       feed_wwdg();
       // Reset main-loop-dead-lock-check timer
@@ -549,13 +564,12 @@ int main( void ) {
           lowpower_config();
           halt();
         }
-      } else if( mSysStatus == SYS_ST_SLEEP ) { 
-          tmrIdleDuration = 0;
-          // Make sure data can be sent right away
+      }
+      // Wake Me up
+      if( WakeupMeFromSleep() ) {
+          // Make sure data can be sent immieiately
           pir_tick = SEND_MAX_INTERVAL_PIR;
-          // Wakeup
-          wakeup_config();
-      }      
+      }
 #endif // Low Power Mode Code
       
       if( pir_ready ) {
