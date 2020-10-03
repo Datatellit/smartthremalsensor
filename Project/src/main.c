@@ -7,7 +7,6 @@
 #include "rf24l01.h"
 #include "timer4.h"
 #include "UsartDev.h"
-#include "XlightComBus.h"
 
 /*
 Xlight Remoter Program
@@ -60,12 +59,6 @@ MyMessage_t sndMsg;
 MyMessage_t rcvMsg;
 uint8_t *psndMsg = (uint8_t *)&sndMsg;
 uint8_t *prcvMsg = (uint8_t *)&rcvMsg;
-bool gNeedSaveBackup = FALSE;
-bool gIsStatusChanged = FALSE;
-bool gIsConfigChanged = FALSE;
-bool gResetRF = FALSE;
-bool gResetNode = FALSE;
-bool gResendPresentation = FALSE;
 
 /* Private variables ---------------------------------------------------------*/
 // main-loop-dead-lock-check timer
@@ -80,8 +73,6 @@ bool pir_ready = FALSE;
 uint16_t pir_tick = 0;
 //////////////////pir collect//////////////////
 
-uint8_t _uniqueID[UNIQUE_ID_LEN];
-
 // Keep Alive Timer
 uint16_t mTimerKeepAlive = 0;
 uint8_t m_cntRFSendFailed = 0;
@@ -93,7 +84,6 @@ uint8_t mutex;
 
 /* Private function prototypes -----------------------------------------------*/
 void tmrProcess();
-void UpdateNodeAddress(const uint8_t _tx);
 
 static void clock_init(void)
 {
@@ -218,51 +208,6 @@ bool WakeupMeFromSleep()
 
 #endif // Low Power Mode Code
 
-// Save config to Flash
-void SaveBackupConfig()
-{
-  if( gNeedSaveBackup ) {
-    // Overwrite entire config bakup FLASH
-    if(Flash_WriteDataBlock(BACKUP_CONFIG_BLOCK_NUM, (uint8_t *)&gConfig, sizeof(gConfig))) {
-      gNeedSaveBackup = FALSE;
-    }
-  }
-}
-
-// Save status to Flash
-void SaveStatusData()
-{
-  if( gIsStatusChanged ) {
-    // Skip the first byte (version)
-    uint8_t pData[50] = {0};
-    uint16_t nLen = (uint16_t)(&(gConfig.nodeID)) - (uint16_t)(&gConfig);
-    memcpy(pData, (uint8_t *)&gConfig, nLen);
-    if(Flash_WriteDataBlock(STATUS_DATA_NUM, pData, nLen)) {
-      gIsStatusChanged = FALSE;
-    }
-  }
-}
-
-// Save config to Flash
-void SaveConfig()
-{
-  if( gIsConfigChanged ) {
-    // Ensure Status has another chance to be saved even if Saving Config failed
-    gIsStatusChanged = TRUE;
-    // Overwrite entire config FLASH 
-    uint8_t Attmpts = 0;
-    while(++Attmpts <= 3) {
-      if(Flash_WriteDataBlock(0, (uint8_t *)&gConfig, sizeof(gConfig))) {
-        gIsStatusChanged = FALSE;
-        gIsConfigChanged = FALSE;
-        gNeedSaveBackup = TRUE;
-        break;
-      }
-    }
-  }
-  SaveStatusData();
-}
-
 bool IsConfigInvalid() {
   return( gConfig.version > XLA_VERSION || gConfig.version < XLA_MIN_VER_REQUIREMENT 
        || (gConfig.type != SEN_TYP_PIR && gConfig.type != SEN_TYP_ZENSOR) 
@@ -275,37 +220,21 @@ bool isNodeIdInvalid(const uint8_t nodeid)
   return( !(IS_SENSOR_NODEID(nodeid) || IS_GROUP_NODEID(nodeid)) );
 }
 
-void UpdateNodeAddress(const uint8_t _tx) {
-  memcpy(rx_addr, gConfig.NetworkID, ADDRESS_WIDTH);
-  rx_addr[0] = gConfig.nodeID;
-  memcpy(tx_addr, gConfig.NetworkID, ADDRESS_WIDTH);
-  
-  if( _tx == NODEID_RF_SCANNER ) {
-    tx_addr[0] = NODEID_RF_SCANNER;
-  } else {  
-    tx_addr[0] = NODEID_GATEWAY;
-  }
-  RF24L01_setup(gConfig.rfChannel, gConfig.rfDataRate, gConfig.rfPowerLevel, BROADCAST_ADDRESS);     // With openning the boardcast pipe
-}  
-
-bool NeedUpdateRFAddress(uint8_t _dest) {
-  bool rc = FALSE;
-  if( sndMsg.header.destination == NODEID_RF_SCANNER && tx_addr[0] != NODEID_RF_SCANNER ) {
-    UpdateNodeAddress(NODEID_RF_SCANNER);
-    rc = TRUE;
-  } else if( sndMsg.header.destination != NODEID_RF_SCANNER && tx_addr[0] != NODEID_GATEWAY ) {
-    UpdateNodeAddress(NODEID_GATEWAY);
-    rc = TRUE;
-  }
-  return rc;
-}
-
 bool WaitMutex(uint32_t _timeout) {
   while(_timeout--) {
     if( mutex > 0 ) return TRUE;
     feed_wwdg();
   }
   return FALSE;
+}
+
+void RestartCheck()
+{
+  if( m_MainloopTimeTick < MAINLOOP_TIMEOUT ) m_MainloopTimeTick++;
+  if( m_MainloopTimeTick >= MAINLOOP_TIMEOUT ) {
+    printlog("need restart!");
+    WWDG->CR = 0x80;
+  }
 }
 
 // reset rf
@@ -461,15 +390,6 @@ void Check_eq()
         led_red_off();
       }
     }
-  }
-}
-
-void RestartCheck()
-{
-  if( m_MainloopTimeTick < MAINLOOP_TIMEOUT ) m_MainloopTimeTick++;
-  if( m_MainloopTimeTick >= MAINLOOP_TIMEOUT ) {
-    printlog("need restart!");
-    WWDG->CR = 0x80;
   }
 }
 

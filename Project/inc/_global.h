@@ -1,11 +1,11 @@
 #ifndef __GLOBAL_H
 #define __GLOBAL_H
 
-#include <stm8l15x.h> //Required for the stdint typedefs
+#include "common.h"
 #include "stdio.h"
 #include "string.h"
 #include "stm8l15x_conf.h"
-#include "common.h"
+#include "XlightComBus.h"
 
 // Xlight Application Identification
 #define XLA_ORGANIZATION          "xlight.ca"               // Default value. Read from EEPROM
@@ -53,14 +53,6 @@ typedef struct
 } Config_t;
 
 extern Config_t gConfig;
-extern bool gIsConfigChanged;
-extern bool gNeedSaveBackup;
-extern bool gIsStatusChanged;
-extern bool gResetRF;
-extern bool gResetNode;
-extern bool gResendPresentation;
-
-extern uint8_t _uniqueID[UNIQUE_ID_LEN];
 extern uint8_t mSysStatus;
 
 void RF24L01_IRQ_Handler();
@@ -68,9 +60,6 @@ bool SendMyMessage();
 bool IsConfigInvalid();
 bool isNodeIdInvalid(const uint8_t nodeid);
 uint16_t GetDelayTick(const uint8_t ds);
-
-void SetSysState(const uint8_t _st);
-uint8_t GetSysState();
 
 //#define TEST
 #ifdef TEST
