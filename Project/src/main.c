@@ -38,7 +38,7 @@ Connections:
 //#define ENABLE_LOW_POWER_MODE
 
 // Keep alive message interval, around 6 seconds
-#define MAX_RF_FAILED_TIME              20      // Reset RF module when reach max failed times of sending
+#define MAX_RF_FAILED_TIME              3       // Reset RF module when reach max failed times of sending
 #define MAX_RF_RESET_TIME               3       // Reset Node when reach max times of RF module consecutive reset
 
 #define SEND_MAX_INTERVAL_PIR           600     // about 6s (600 * 10ms)
@@ -62,7 +62,9 @@ uint8_t *prcvMsg = (uint8_t *)&rcvMsg;
 
 /* Private variables ---------------------------------------------------------*/
 // main-loop-dead-lock-check timer
+#ifdef DEBUG_NO_WWDG
 uint16_t m_MainloopTimeTick = 0;
+#endif
 
 uint8_t mSysStatus = SYS_ST_INIT;
 
@@ -230,16 +232,29 @@ bool WaitMutex(uint32_t _timeout) {
 
 void RestartCheck()
 {
+#ifdef DEBUG_NO_WWDG
   if( m_MainloopTimeTick < MAINLOOP_TIMEOUT ) m_MainloopTimeTick++;
   if( m_MainloopTimeTick >= MAINLOOP_TIMEOUT ) {
-    printlog("need restart!");
+    //printlog("need restart!");
     WWDG->CR = 0x80;
   }
+#endif
 }
 
 // reset rf
 void ResetRFModule()
 {
+  if(gResetNode) {
+#ifdef ENABLE_LOW_POWER_MODE    
+    // Wake Me up
+    WakeupMeFromSleep();
+#endif
+    mSysStatus = SYS_ST_RESET;
+    gResetNode = FALSE;
+    // Execute Cold Reset if there is no 'Setup Loop' in the main()
+    //WWDG->CR = 0x80;
+    return;
+  }
   if(gResetRF) {
     RF24L01_init();
     NRF2401_EnableIRQ();
@@ -252,14 +267,6 @@ void ResetRFModule()
     Msg_Presentation(1);   // Require-Ack
     gResendPresentation = FALSE;
   }
-  if(gResetNode) {
-#ifdef ENABLE_LOW_POWER_MODE    
-    // Wake Me up
-    WakeupMeFromSleep();
-#endif    
-    mSysStatus = SYS_ST_RESET;
-    gResetNode = FALSE;
-  }  
 }
 
 uint16_t GetDelayTick(const uint8_t ds)
@@ -282,58 +289,44 @@ bool SendMyMessage() {
     NeedUpdateRFAddress(sndMsg.header.destination);
       
     uint8_t lv_tried = 0;
-    uint16_t delay;
     while (lv_tried++ <= gConfig.rptTimes ) {
       
       mutex = 0;
       RF24L01_set_mode_TX();
       RF24L01_write_payload(psndMsg, PLOAD_WIDTH);
       WaitMutex(0x1FFFF);
-      if (mutex == 1) {
+      if( mutex == 1 ) {
         m_cntRFSendFailed = 0;
         m_cntRFReset = 0;
+        // Reset Keep Alive Timer
+        mTimerKeepAlive = 0;
         break; // sent sccessfully
       } else {
-        m_cntRFSendFailed++;
-        if( m_cntRFSendFailed >= MAX_RF_FAILED_TIME ) {
+        if( ++m_cntRFSendFailed >= MAX_RF_FAILED_TIME ) {
           m_cntRFSendFailed = 0;
-          m_cntRFReset++;
-          if( m_cntRFReset >= MAX_RF_RESET_TIME ) {
-            // Cold Reset
-            WWDG->CR = 0x80;
+          if( ++m_cntRFReset > MAX_RF_RESET_TIME ) {
             m_cntRFReset = 0;
-            break;
-          } else if( m_cntRFReset >= 2 ) {
+            mTimerKeepAlive = 0;
             // Reset whole node
             gResetNode = TRUE;
             break;
           }
-
           // Reset RF module
-          //RF24L01_DeInit();
-          delay = 0x1FFF;
-          while(delay--)feed_wwdg();
-          RF24L01_init();
-          NRF2401_EnableIRQ();
-          UpdateNodeAddress(NODEID_GATEWAY);
-          continue;
+          gResetRF = TRUE;
+          ResetRFModule();
         }
       }
       
       //The transmission failed, Notes: mutex == 2 doesn't mean failed
       //It happens when rx address defers from tx address
       //asm("nop"); //Place a breakpoint here to see memory
-      // Repeat the message if necessary
-      delay = 0xFFF;
-      while(delay--)feed_wwdg();
+      // Delay for a while and retry sending
+      delay_ms(10);
     }
     
     // Switch back to receive mode
     bMsgReady = 0;
-    RF24L01_set_mode_RX();
-    
-    // Reset Keep Alive Timer
-    mTimerKeepAlive = 0;
+    RF24L01_set_mode_RX();    
   }
   return(mutex > 0);
 #else
@@ -448,7 +441,9 @@ int main( void ) {
       // Feed the Watchdog
       feed_wwdg();
       // Reset main-loop-dead-lock-check timer
+#ifdef DEBUG_NO_WWDG
       m_MainloopTimeTick = 0;
+#endif
       timeoutRFcheck++;
     }
     // NRF_IRQ
@@ -467,7 +462,9 @@ int main( void ) {
       // Feed the Watchdog
       feed_wwdg();
       // Reset main-loop-dead-lock-check timer
+#ifdef DEBUG_NO_WWDG
       m_MainloopTimeTick = 0;
+#endif
       ////////////rfscanner process///////////////////////////////
       ProcessOutputCfgMsg();
       

@@ -2,8 +2,6 @@
 #define __GLOBAL_H
 
 #include "common.h"
-#include "stdio.h"
-#include "string.h"
 #include "stm8l15x_conf.h"
 #include "XlightComBus.h"
 

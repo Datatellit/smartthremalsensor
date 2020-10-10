@@ -114,7 +114,7 @@ void Msg_RequestNodeID() {
   build(BASESERVICE_ADDRESS, NODE_TYP_REMOTE, C_INTERNAL, I_ID_REQUEST, 1, 0);
   moSetPayloadType(P_ULONG32);
   moSetLength(UNIQUE_ID_LEN);
-  memcpy(sndMsg.payload.data, _uniqueID, UNIQUE_ID_LEN);
+  copyBuffer(sndMsg.payload.data, _uniqueID, UNIQUE_ID_LEN);
   bMsgReady = 1;
 }
 
@@ -123,7 +123,7 @@ void Msg_Presentation(const uint8_t _rack) {
   build(NODEID_GATEWAY, S_ZENSENSOR, C_PRESENTATION, gConfig.type, _rack, 0);
   moSetPayloadType(P_ULONG32);
   moSetLength(UNIQUE_ID_LEN);
-  memcpy(sndMsg.payload.data, _uniqueID, UNIQUE_ID_LEN);
+  copyBuffer(sndMsg.payload.data, _uniqueID, UNIQUE_ID_LEN);
   bMsgReady = 1;
 }
 
@@ -132,7 +132,7 @@ void Msg_DevState(const uint8_t _state, const uint8_t _hasid) {
   uint8_t payl_len = 0;
   build(NODEID_GATEWAY, gConfig.subID, C_REQ, V_STATUS, 0, 1);
   if(_hasid) {
-    memcpy(sndMsg.payload.data, _uniqueID, UNIQUE_ID_LEN);
+    copyBuffer(sndMsg.payload.data, _uniqueID, UNIQUE_ID_LEN);
     payl_len += UNIQUE_ID_LEN;
     moSetVersion(2);
     moSetPayloadType(P_CUSTOM);
