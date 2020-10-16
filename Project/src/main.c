@@ -294,7 +294,10 @@ bool SendMyMessage() {
       mutex = 0;
       RF24L01_set_mode_TX();
       RF24L01_write_payload(psndMsg, PLOAD_WIDTH);
-      WaitMutex(0x1FFFF);
+      if( !WaitMutex(0x1FFFF) ) {
+        // Timeout: no IRQ
+        mutex = RF24L01_was_data_sent();
+      }
       if( mutex == 1 ) {
         m_cntRFSendFailed = 0;
         m_cntRFReset = 0;
