@@ -122,8 +122,9 @@ void Msg_RequestNodeID() {
 void Msg_Presentation(const uint8_t _rack) {
   build(NODEID_GATEWAY, S_ZENSENSOR, C_PRESENTATION, gConfig.type, _rack, 0);
   moSetPayloadType(P_ULONG32);
-  moSetLength(UNIQUE_ID_LEN);
   copyBuffer(sndMsg.payload.data, _uniqueID, UNIQUE_ID_LEN);
+  sndMsg.payload.data[UNIQUE_ID_LEN] = gConfig.subID;
+  moSetLength(UNIQUE_ID_LEN + 1);
   bMsgReady = 1;
 }
 
