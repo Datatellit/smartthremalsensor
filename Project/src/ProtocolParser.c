@@ -54,6 +54,25 @@ uint8_t ParseProtocol(){
     break;
       
   case C_PRESENTATION:
+    if( _sensor == S_ZENSENSOR ) {
+      if( _isAck ) {
+        // Device/client got Response to Presentation message, ready to work
+        gConfig.token = rcvMsg.payload.uiValue;
+        gConfig.present = (gConfig.token >  0);
+        //GotPresented();
+        // Need update subID & devType?
+        if(_lenPayl > 2) {
+          if( gConfig.subID != rcvMsg.payload.data[2] ) {
+              gConfig.subID = rcvMsg.payload.data[2];
+              gIsStatusChanged = TRUE;
+          }
+          if( gConfig.type != _type ) {
+              gConfig.type = _type;
+              gIsStatusChanged = TRUE;
+          }
+        }
+      }
+    }    
     break;
   
   case C_REQ:
@@ -122,9 +141,13 @@ void Msg_RequestNodeID() {
 void Msg_Presentation(const uint8_t _rack) {
   build(NODEID_GATEWAY, S_ZENSENSOR, C_PRESENTATION, gConfig.type, _rack, 0);
   moSetPayloadType(P_ULONG32);
+  moSetLength(UNIQUE_ID_LEN);
   copyBuffer(sndMsg.payload.data, _uniqueID, UNIQUE_ID_LEN);
-  sndMsg.payload.data[UNIQUE_ID_LEN] = gConfig.subID;
-  moSetLength(UNIQUE_ID_LEN + 1);
+  if( gSubIDChanged ) {
+    sndMsg.payload.data[UNIQUE_ID_LEN] = gConfig.subID;
+    moSetLength(UNIQUE_ID_LEN + 1);
+    gSubIDChanged = FALSE;
+  }
   bMsgReady = 1;
 }
 
