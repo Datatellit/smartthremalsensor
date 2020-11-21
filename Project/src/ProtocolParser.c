@@ -38,17 +38,16 @@ uint8_t ParseProtocol(){
   
   switch( _cmd ) {
   case C_INTERNAL:
-      if( _type == I_CONFIG ) {
+    if( _type == I_CONFIG ) {
       // Node Config
       switch( _sensor ) {
         case NCF_CFG_PIRTIMEOUT:
-          {
-            uint16_t  timeouttick = (rcvMsg.payload.data[0]<<8 | rcvMsg.payload.data[1]);
-            if(timeouttick > 0 && timeouttick <= 60000) {
-              gConfig.timeout = timeouttick;
-            }
+          if(_lenPayl > 0 ) {
+            uint16_t timeouttick = rcvMsg.payload.data[0];
+            if(_lenPayl > 1 ) timeouttick += (rcvMsg.payload.data[1]<<8);
+            if( timeouttick > 0 ) gConfig.timeout = timeouttick;
           }
-         break; 
+        break;
       }
     }
     break;
