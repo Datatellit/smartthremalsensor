@@ -47,6 +47,7 @@ typedef struct
   UC indDevice                :3;           // Current Device Index: [0..3]
   UC reserved2                :5;
   US timeout                  :16;          // pir timeout
+  US keepalive                :16;          // keepalive interval
   UL senMap                   :32;          // Sensor Map
 } Config_t;
 

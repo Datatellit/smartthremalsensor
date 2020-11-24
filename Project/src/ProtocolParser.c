@@ -35,6 +35,7 @@ uint8_t ParseProtocol(){
   uint8_t _lenPayl = miGetLength();
   bool _needAck = (bool)miGetRequestAck();
   bool _isAck = (bool)miGetAck();
+  uint16_t timeouttick;
   
   switch( _cmd ) {
   case C_INTERNAL:
@@ -43,10 +44,22 @@ uint8_t ParseProtocol(){
       switch( _sensor ) {
         case NCF_CFG_PIRTIMEOUT:
           if(_lenPayl > 0 ) {
-            uint16_t timeouttick = rcvMsg.payload.data[0];
+            timeouttick = rcvMsg.payload.data[0];
             if(_lenPayl > 1 ) timeouttick += (rcvMsg.payload.data[1]<<8);
-            if( timeouttick > 0 ) gConfig.timeout = timeouttick;
+            if( timeouttick > 0 ) {
+              gConfig.timeout = timeouttick;
+              gIsConfigChanged = TRUE;
+            }
           }
+        break;
+        case NCF_CFG_PIR_MSG_MAX_INTERVAL:
+          timeouttick = 0;
+          if(_lenPayl > 0 ) {
+            timeouttick = rcvMsg.payload.data[0];
+            if(_lenPayl > 1 ) timeouttick += (rcvMsg.payload.data[1]<<8);
+          }
+          gConfig.keepalive = timeouttick;
+          gIsConfigChanged = TRUE;
         break;
       }
     }

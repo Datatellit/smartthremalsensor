@@ -34,6 +34,8 @@
     
 u32 int_timer4 = 0;
 
+void PIR_IRQ_Handler();
+
 /** @addtogroup STM8L15x_StdPeriph_Examples
   * @{
   */
@@ -206,6 +208,20 @@ INTERRUPT_HANDLER(EXTI3_IRQHandler, 11)
   */
   //button_event_handler(GPIO_Pin_3);
   EXTI_ClearITPendingBit(EXTI_IT_Pin3);
+}
+
+/**
+  * @brief External IT PIN4 Interrupt routine.
+  * @param  None
+  * @retval None
+  */
+INTERRUPT_HANDLER(EXTI4_IRQHandler, 12)
+{
+  /* In order to detect unexpected events during development,
+     it is recommended to set a breakpoint on the following instruction.
+  */
+  PIR_IRQ_Handler();
+  EXTI_ClearITPendingBit(EXTI_IT_Pin4);    
 }
 
 /**

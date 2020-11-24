@@ -41,7 +41,7 @@ Connections:
 #define MAX_RF_FAILED_TIME              3       // Reset RF module when reach max failed times of sending
 #define MAX_RF_RESET_TIME               3       // Reset Node when reach max times of RF module consecutive reset
 
-#define SEND_MAX_INTERVAL_PIR           600     // about 6s (600 * 10ms)
+#define SEND_MAX_INTERVAL_PIR           10      // about 10s
 
 #define POWER_CHECK_INTERVAL            40      // about 400ms (40 * 10ms)
 #define DC_FULLPOWER                    460
@@ -69,9 +69,7 @@ uint16_t m_MainloopTimeTick = 0;
 uint8_t mSysStatus = SYS_ST_INIT;
 
 //////////////////pir collect//////////////////
-uint8_t pir_check_data = 0;
 uint8_t pir_value = 0;
-bool pir_ready = FALSE;
 uint16_t pir_tick = 0;
 //////////////////pir collect//////////////////
 
@@ -404,10 +402,14 @@ int main( void ) {
   Read_UniqueID(_uniqueID, UNIQUE_ID_LEN);
   LoadConfig();  
   ////// not common config check/////////////
-  if(gConfig.timeout == 0 || gConfig.timeout >= 60000) { // invalid timeout
+  if(gConfig.timeout == 0 || gConfig.timeout > 60000) { // invalid timeout
     gConfig.timeout = 5;
     gIsConfigChanged = TRUE;
-  }  
+  }
+  if( (gConfig.keepalive > 0 && gConfig.keepalive < 5) || gConfig.keepalive > 600) {
+    gConfig.keepalive = SEND_MAX_INTERVAL_PIR;
+    gIsConfigChanged = TRUE;
+  }
   ////// not common config check/////////////
 
 #ifdef DEBUG_LOG
@@ -429,7 +431,6 @@ int main( void ) {
   printlog("start...");
   uint8_t pre_pir_value = 255;
   pir_value = (GPIO_ReadInputDataBit(GPIOC, GPIO_Pin_4) == RESET) ? 0 : 1;
-  pir_ready = TRUE;
   
   while(1) { // Setup Loop
 #ifdef RF24
@@ -488,18 +489,15 @@ int main( void ) {
       // Wake Me up
       if( WakeupMeFromSleep() ) {
           // Make sure data can be sent immieiately
-          pir_tick = SEND_MAX_INTERVAL_PIR;
+          pre_pir_value = 255;
       }
 #endif // Low Power Mode Code
       
-      if( pir_ready ) {
-        if( pre_pir_value != pir_value || pir_tick >= SEND_MAX_INTERVAL_PIR ) {
-            // Reset send timer
-            pir_tick = 0;
-            pre_pir_value = pir_value;
-            Msg_SendPIR(pre_pir_value);
-            pir_ready = FALSE;
-        }
+      if( pre_pir_value != pir_value || (gConfig.keepalive > 0 && pir_tick >= gConfig.keepalive * 100) ) {
+          // Reset send timer
+          pir_tick = 0;
+          pre_pir_value = pir_value;
+          Msg_SendPIR(pre_pir_value);
       }
       
       // Send message if ready
@@ -526,12 +524,12 @@ void tmrProcess() {
   }
     
   pir_tick++;
-  if(pirofftimeout > 0) {
+  if( pirofftimeout > 0 && pir_value == 1 ) {
     pirofftimeout--;
-  }
-  if(pirofftimeout == 0 && pir_check_data == 0) {
-    pir_value = 0;
-    led_green_off();
+    if( pirofftimeout == 0 ) {
+      pir_value = 0;
+      led_green_off();
+    }
   }
   
   // Restart Check
@@ -553,26 +551,18 @@ void RF24L01_IRQ_Handler() {
   }
 }
 
-/**
-  * @brief External IT PIN4 Interrupt routine.
-  * @param  None
-  * @retval None
-  */
-INTERRUPT_HANDLER(EXTI4_IRQHandler, 12)
+void PIR_IRQ_Handler()
 {
   /* In order to detect unexpected events during development,
      it is recommended to set a breakpoint on the following instruction.
   */
   tmrIdleDuration = 0;
-  pir_ready = TRUE;
   if(GPIO_ReadInputDataBit(GPIOC, GPIO_Pin_4) == RESET) {
-    //pir_value = 0;
-    pir_check_data = 0;
+    //pir_value = 0;        delay operation
     pirofftimeout = gConfig.timeout * 100;
   } else {
-    pir_check_data = 1;
-    pir_value = 1;    
+    pirofftimeout = 0;
+    pir_value = 1;
     led_green_on();
   }
-  EXTI_ClearITPendingBit(EXTI_IT_Pin4);    
 }
