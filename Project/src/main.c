@@ -1,5 +1,6 @@
 #include "_global.h"
 #include "ADC1Dev.h"
+#include "debugDefine.h"
 #include "delay.h"
 #include "led.h"
 #include "MyMessage.h"
@@ -51,6 +52,10 @@ Connections:
 #define TIMEOUT_IDLE                    300     // The unit is 10 ms, so the duration is 3 s.
 
 #define MAINLOOP_TIMEOUT                6000    // 60s for mainloop timeout
+
+// Detect enable / disable
+#define SET_SENSOR_ON                   GPIO_WriteBit(GPIOB, GPIO_Pin_0, SET)
+#define SET_SENSOR_OFF                  GPIO_WriteBit(GPIOB, GPIO_Pin_0, RESET)
 
 /* Public variables ---------------------------------------------------------*/
 Config_t gConfig;
@@ -284,6 +289,10 @@ uint16_t GetDelayTick(const uint8_t ds)
 bool SendMyMessage() {
 #ifdef RF24
   if( bMsgReady && delaySendTick == 0 ) {
+
+    // 暂时关闭检测
+    SET_SENSOR_OFF;
+    
     // Change tx destination if necessary
     NeedUpdateRFAddress(sndMsg.header.destination);
       
@@ -328,6 +337,10 @@ bool SendMyMessage() {
       delay_ms(10);
     }
     bMsgReady = 0;
+
+    // 启用检测
+    SET_SENSOR_ON;
+    
   }
   return(mutex > 0);
 #else
@@ -338,11 +351,17 @@ bool SendMyMessage() {
 // Init data and other GPIOs
 void dataio_init()
 {
+    // 检测使能口：高电平有效，才能进行人感检测
+    GPIO_Init(GPIOB, GPIO_Pin_0, GPIO_Mode_Out_PP_High_Slow);
+
     // 人感信号检测口
     GPIO_Init(GPIOC, GPIO_Pin_4, GPIO_Mode_In_PU_IT);
     EXTI_DeInit();
     // 检测上升沿+下降沿才有效
-    EXTI_SetPinSensitivity(EXTI_Pin_4, EXTI_Trigger_Rising_Falling);
+    EXTI_SetPinSensitivity(EXTI_Pin_4, EXTI_Trigger_Rising_Falling);    
+
+    // 暂时关闭检测
+    SET_SENSOR_OFF;
 }
 
 uint16_t m_eqv;
@@ -433,6 +452,10 @@ int main( void ) {
   pir_value = (GPIO_ReadInputDataBit(GPIOC, GPIO_Pin_4) == RESET) ? 0 : 1;
   
   while(1) { // Setup Loop
+    
+    // 暂时关闭检测
+    SET_SENSOR_OFF;
+    
 #ifdef RF24
     // Go on only if NRF chip is presented
     RF24L01_init();
@@ -461,7 +484,11 @@ int main( void ) {
     gIsStatusChanged = TRUE;
 
     // System enter running state
-    SetSysState(SYS_ST_RUNNING);    
+    SetSysState(SYS_ST_RUNNING);
+    
+    // 启用检测
+    SET_SENSOR_ON;
+    
     while( mSysStatus > SYS_ST_INIT &&  mSysStatus < SYS_ST_RESET ) { // Working Loop
       // Feed the Watchdog
       feed_wwdg();
