@@ -8,6 +8,7 @@
 #include "rf24l01.h"
 #include "timer4.h"
 #include "UsartDev.h"
+#include "wwdg.h"
 
 /*
 Xlight Remoter Program

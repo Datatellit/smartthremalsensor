@@ -19,7 +19,46 @@
   <group>
     <name>Common</name>
     <group>
-      <name>ComBusiness</name>
+      <name>BSP</name>
+      <file>
+        <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\delay.c</name>
+      </file>
+      <file>
+        <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\delay.h</name>
+      </file>
+      <file>
+        <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\FlashDataStorage.c</name>
+      </file>
+      <file>
+        <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\FlashDataStorage.h</name>
+      </file>
+      <file>
+        <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\rf24l01.c</name>
+      </file>
+      <file>
+        <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\rf24l01.h</name>
+      </file>
+      <file>
+        <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\UsartDev.c</name>
+      </file>
+      <file>
+        <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\UsartDev.h</name>
+      </file>
+      <file>
+        <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\wwdg.c</name>
+      </file>
+      <file>
+        <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\wwdg.h</name>
+      </file>
+    </group>
+    <group>
+      <name>ComBiz</name>
+      <file>
+        <name>$PROJ_DIR$\..\xlightCommon\xlightdefine\Business\common.c</name>
+      </file>
+      <file>
+        <name>$PROJ_DIR$\..\xlightCommon\xlightdefine\Business\common.h</name>
+      </file>
       <file>
         <name>$PROJ_DIR$\..\xlightCommon\xlightdefine\Business\ProtocolBus.c</name>
       </file>
@@ -34,34 +73,10 @@
       </file>
     </group>
     <file>
-      <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\common.c</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\common.h</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\delay.c</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\delay.h</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\rf24l01.c</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\rf24l01.h</name>
-    </file>
-    <file>
       <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\stm8l15x_conf.h</name>
     </file>
     <file>
       <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\stm8l15x_it.h</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\UsartDev.c</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\xlightCommon\stm8l\Xlight-stm8l\UsartDev.h</name>
     </file>
   </group>
   <group>
